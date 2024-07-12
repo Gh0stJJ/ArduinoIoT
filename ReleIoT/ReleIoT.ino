@@ -1,3 +1,7 @@
+#include <PubSubClient.h>
+#include <ESP8266WiFi.h>
+
+
 // Mapa de pines físicos a números de GPIO
 const int D0 = 16;
 const int D1 = 5;
@@ -11,11 +15,24 @@ const int D8 = 15;
 const int D9 = 3;
 const int D10 = 1;
 
+
+
+// Wifi config
+const char* ssid = "IoT_God";
+const char* password = "god12345";
+
+
+const char* mqtt_server = "192.168.1.2";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+
+const int ledPin = D4;  // LED integrado en ESP8266 (GPIO2)
 const int relayPin = D1; 
 const int redPin = D2;   
 const int bluePin = D3;  
 const int greenPin = D4; 
-int value = 0;
 
 void controlVents(char mode) {
   if (mode == '1') {
@@ -25,7 +42,7 @@ void controlVents(char mode) {
   }
 }
 
-void controlRGB(char color, char state) {
+void controlRGB(char color, int value) {
   int pin;
   switch(color) {
     case 'R': pin = redPin; break;
@@ -33,19 +50,67 @@ void controlRGB(char color, char state) {
     case 'B': pin = bluePin; break;
     default: return;
   }
-  if (state == '1') {
-    digitalWrite(pin, HIGH);
-  } else if (state == '0') {
-    digitalWrite(pin, LOW);
-  }
-}
-
-void dimLed(int pin, int value) {
   analogWrite(pin, value);
 }
 
+void callback(char* topic, byte* payload, unsigned int length) {
+  String msg;
+  for (unsigned int i = 0; i < length; i++) {
+    msg += (char)payload[i];
+  }
+  
+  if (String(topic) == "FAN") {
+    controlVents(msg.charAt(0));
+  } else if (String(topic) == "LED") {
+    char color = msg.charAt(0);
+    int value = msg.substring(1).toInt();
+    controlRGB(color, value);
+  }
+}
+
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Conectando a ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    for (int i = 0; i < 5; i++) {
+      digitalWrite(ledPin, LOW);  // apagado
+      delay(100);
+      digitalWrite(ledPin, HIGH); // encendido
+      delay(100);
+    }
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi conectado");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  digitalWrite(ledPin, LOW); 
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Intentando conexión MQTT...");
+    if (client.connect("ESP8266Client")) {
+      Serial.println("conectado");
+      client.subscribe("LED");
+      client.subscribe("FAN");
+    } else {
+      Serial.print("falló, rc=");
+      Serial.print(client.state());
+      Serial.println(" intentando de nuevo en 5 segundos");
+      delay(5000);
+    }
+  }
+}
+
 void setup() {
-  // Establecer los pines del led como salida
+  pinMode(ledPin, OUTPUT); 
   pinMode(relayPin, OUTPUT); 
   pinMode(redPin, OUTPUT);
   pinMode(bluePin, OUTPUT);
@@ -55,27 +120,16 @@ void setup() {
   digitalWrite(redPin, LOW);
   digitalWrite(bluePin, LOW);
   digitalWrite(greenPin, LOW);
+  digitalWrite(ledPin, HIGH); // apagado
+
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
 }
 
 void loop() {
-
-  // dimLed(redPin, value);
-  // delay(1000);
-  // value += 5;
-  // if (value > 255) {
-  //   value = 0;
-  // }
-  if (Serial.available() > 0) {
-    char command = Serial.read(); 
-    if (command == '1' || command == '0') {
-      controlVents(command);
-    } else if (command == 'R' || command == 'G' || command == 'B') {
-      while (!Serial.available()); // espera el siguiente caracter
-      char state = Serial.read();
-      if (state == '1' || state == '0') {
-        controlRGB(command, state);
-      }
-    }
+  if (!client.connected()) {
+    reconnect();
   }
-
+  client.loop();
 }
