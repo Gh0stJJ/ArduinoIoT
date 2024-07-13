@@ -95,13 +95,13 @@ void setup_wifi() {
 
 void reconnect() {
   while (!client.connected()) {
-    Serial.print("Intentando conexión MQTT...");
+    Serial.print("Intentando conexion MQTT...");
     if (client.connect("ESP8266Client")) {
       Serial.println("conectado");
       client.subscribe("LED");
       client.subscribe("FAN");
     } else {
-      Serial.print("falló, rc=");
+      Serial.print("fallo, rc=");
       Serial.print(client.state());
       Serial.println(" intentando de nuevo en 5 segundos");
       delay(5000);
